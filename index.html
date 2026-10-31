@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rally Boyz</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1f6f5c">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+:root{--bg:#f6f8f7;--card:#fff;--bd:#dde4e1;--tx:#18211d;--tx2:#5d6b65;--ac:#1f6f5c;--acbg:#e1f0ea;--red:#b23a2f;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root{--bg:#121816;--card:#1b2420;--bd:#2f3c36;--tx:#eaf1ee;--tx2:#9fb0a8;--acbg:#1d3a31}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,"Segoe UI",sans-serif}
+a{color:var(--ac)}
+.w{max-width:480px;margin:0 auto;padding:16px}
+h1{font-size:18px;margin:0}
+.sub{font-size:12px;color:var(--tx2);margin:2px 0 12px}
+.tabs{display:flex;gap:6px;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:4px;margin-bottom:14px}
+.tab{flex:1;text-align:center;padding:9px 0;font-size:13px;font-weight:500;border-radius:9px;color:var(--tx2);cursor:pointer}
+.tab.on{background:var(--ac);color:#fff}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:10px}
+.row{display:flex;align-items:center;gap:8px}
+.g{flex:1;min-width:0}
+.n{font-weight:600;font-size:14px}
+.m{font-size:12px;color:var(--tx2)}
+button,select,input{font:inherit;font-size:14px;border-radius:9px;border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:9px 12px}
+input,select{width:100%;margin-bottom:6px}
+button{cursor:pointer}
+.p{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600}
+.big{width:100%;padding:22px 8px}
+.chip{display:inline-block;padding:7px 11px;margin:0 6px 6px 0;font-size:13px;border-radius:20px;border:1px solid var(--bd);cursor:pointer}
+.chip.on{background:var(--acbg);border-color:var(--ac);color:var(--ac);font-weight:600}
+.score{font-size:42px;font-weight:700;line-height:1.1}
+.err{color:var(--red);font-size:12px;min-height:16px}
+#sheet{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-end;z-index:9}
+#sheetin{background:var(--bg);width:100%;max-width:480px;margin:0 auto;border-radius:16px 16px 0 0;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));max-height:88vh;overflow:auto}
+.st{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.st div{background:var(--bg);border-radius:8px;padding:6px 8px;font-size:12px;color:var(--tx2)}
+.st b{display:block;font-size:15px;color:var(--tx)}
+</style></head><body>
+
+<div class="w" id="auth">
+  <h1>Rally Boyz</h1><p class="sub">Table tennis scoring and stats</p>
+  <div class="card">
+    <div class="n" id="atitle" style="margin-bottom:8px">Log in</div>
+    <input id="em" type="email" placeholder="Email">
+    <input id="pw" type="password" placeholder="Password (6+ characters)">
+    <button class="p big" style="padding:12px" id="abtn">Log in</button>
+    <p class="err" id="autherr"></p>
+    <p class="m" style="text-align:center"><a href="#" id="tog">New here? Sign up</a> &middot; <a href="#" id="forgot">Forgot password?</a></p>
+  </div>
+</div>
+
+<div class="w" id="app" style="display:none">
+  <div class="row" style="align-items:flex-start"><div class="g"><h1>Rally Boyz</h1><p class="sub">Table tennis scoring and stats</p></div><button id="out" style="font-size:12px;padding:6px 10px">Log out</button></div>
+  <div class="tabs">
+    <div class="tab on" data-t="match">Match</div>
+    <div class="tab" data-t="board">Leaderboard</div>
+    <div class="tab" data-t="hist">History</div>
+  </div>
+  <div id="view"></div>
+</div>
+<div id="sheet"><div id="sheetin"></div></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, doc, setDoc, addDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// Paste your own Firebase project's web config here (Firebase console > Project settings > Your apps)
+const CFG = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.firebasestorage.app",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+const WIN_PTS = 3; // leaderboard points for every player on the winning side
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+if (CFG.apiKey === "YOUR_API_KEY") {
+  $("autherr").textContent = "Firebase isn't configured yet. Paste your project config into index.html (CFG near the top of the script).";
+} else main();
+
+function main(){
+const app = initializeApp(CFG), auth = getAuth(app), db = getFirestore(app);
+let uid = null, players = [], matches = [], tab = 'match', curId = null, sheetSide = null, tags = {}, expanded = null, unsubs = [];
+let setup = {type:'singles', bestOf:3, first:0, a:['',''], b:['',''], err:''};
+
+const pn = id => (players.find(p => p.id === id) || {name:'?'}).name;
+const sideName = (m, s) => (s ? m.b : m.a).map(pn).join(' & ');
+const cnt = (g, s) => g.pts.filter(p => p.w === s).length;
+const over = (a, b) => (a >= 11 || b >= 11) && Math.abs(a - b) >= 2;
+const gamesWon = m => { const w = [0,0]; m.games.forEach(g => { const a = cnt(g,0), b = cnt(g,1); if (over(a,b)) w[a > b ? 0 : 1]++; }); return w; };
+const serverSide = (m, gi, n) => { const base = (m.firstServer + gi) % 2; return n >= 20 ? (base + (n - 20)) % 2 : (base + Math.floor(n / 2)) % 2; };
+const pct = (a, b) => b ? Math.round(100 * a / b) + '%' : '–';
+const chip = (attr, val, label, on) => `<span class="chip ${on ? 'on' : ''}" ${attr}="${esc(val)}">${esc(label)}</span>`;
+
+// ---------- auth ----------
+let signup = false;
+$('tog').onclick = e => { e.preventDefault(); signup = !signup; $('atitle').textContent = signup ? 'Create account' : 'Log in'; $('abtn').textContent = signup ? 'Sign up' : 'Log in'; $('tog').textContent = signup ? 'Have an account? Log in' : 'New here? Sign up'; $('autherr').textContent = ''; };
+$('abtn').onclick = async () => {
+  const e = $('em').value.trim(), p = $('pw').value; $('autherr').textContent = '';
+  if (!e || !p) { $('autherr').textContent = 'Enter email and password.'; return; }
+  try { signup ? await createUserWithEmailAndPassword(auth, e, p) : await signInWithEmailAndPassword(auth, e, p); }
+  catch (x) { $('autherr').textContent = ({'auth/email-already-in-use':'That email already has an account.','auth/weak-password':'Password needs 6+ characters.','auth/invalid-credential':'Wrong email or password.','auth/invalid-email':'That email looks invalid.'})[x.code] || x.code; }
+};
+$('forgot').onclick = async e => {
+  e.preventDefault(); const em = $('em').value.trim();
+  if (!em) { $('autherr').textContent = 'Type your email first.'; return; }
+  try { await sendPasswordResetEmail(auth, em); $('autherr').textContent = 'Reset email sent. Check spam too.'; } catch (x) { $('autherr').textContent = x.code; }
+};
+$('out').onclick = () => signOut(auth);
+onAuthStateChanged(auth, u => {
+  if (u) { uid = u.uid; $('auth').style.display = 'none'; $('app').style.display = 'block'; listen(); }
+  else { uid = null; unsubs.forEach(f => f()); unsubs = []; curId = null; $('sheet').style.display = 'none'; $('app').style.display = 'none'; $('auth').style.display = 'block'; }
+});
+function listen(){
+  if (unsubs.length) return;
+  unsubs = [
+    onSnapshot(collection(db,'players'), s => { players = s.docs.map(d => ({id:d.id, ...d.data()})).sort((a,b) => a.name.localeCompare(b.name)); render(); }),
+    onSnapshot(collection(db,'matches'), s => { matches = s.docs.map(d => ({id:d.id, ...d.data()})); render(); })
+  ];
+}
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => { tab = t.dataset.t; render(); });
+function render(){
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.t === tab));
+  ({match:rMatch, board:rBoard, hist:rHist})[tab]();
+}
+
+// ---------- match setup ----------
+function liveScore(m){ const g = m.games[m.games.length-1], gw = gamesWon(m); return `Games ${gw[0]}–${gw[1]} · Points ${cnt(g,0)}–${cnt(g,1)}`; }
+function rMatch(){
+  const m = matches.find(x => x.id === curId);
+  if (m) return rScore(m);
+  const live = matches.filter(x => x.status === 'live').sort((a,b) => b.createdAt - a.createdAt);
+  const n = setup.type === 'doubles' ? 2 : 1;
+  const sel = (k, i) => `<select data-k="${k}" data-i="${i}"><option value="">Choose player</option>${players.map(p => `<option value="${p.id}" ${setup[k][i] === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>`;
+  $('view').innerHTML =
+    (live.length ? `<div class="card"><div class="n" style="margin-bottom:6px">Live matches</div>${live.map(x => `<div class="row" style="margin-bottom:6px"><div class="g"><div class="n">${esc(sideName(x,0))} vs ${esc(sideName(x,1))}</div><div class="m">${liveScore(x)}</div></div><button data-cont="${x.id}">Continue</button></div>`).join('')}</div>` : '') +
+    `<div class="card"><div class="n" style="margin-bottom:8px">New match</div>
+      ${chip('data-type','singles','Singles',setup.type==='singles')}${chip('data-type','doubles','Doubles',setup.type==='doubles')}<br>
+      ${chip('data-bo','3','Best of 3',setup.bestOf===3)}${chip('data-bo','5','Best of 5',setup.bestOf===5)}<br>
+      <div class="m" style="margin-bottom:4px">Serves first</div>${chip('data-first','0','Side A',setup.first===0)}${chip('data-first','1','Side B',setup.first===1)}
+      <div class="m" style="margin:8px 0 4px">Side A</div>${[...Array(n)].map((_,i) => sel('a',i)).join('')}
+      <div class="m" style="margin:8px 0 4px">Side B</div>${[...Array(n)].map((_,i) => sel('b',i)).join('')}
+      <div class="err">${esc(setup.err)}</div>
+      <button class="p big" style="padding:12px" id="start">Start match</button></div>
+     <div class="card"><div class="n" style="margin-bottom:6px">Add a player</div><div class="row"><input id="newp" placeholder="Name" style="margin:0"><button id="addp">Add</button></div></div>`;
+  document.querySelectorAll('[data-type]').forEach(e => e.onclick = () => { setup.type = e.dataset.type; rMatch(); });
+  document.querySelectorAll('[data-bo]').forEach(e => e.onclick = () => { setup.bestOf = +e.dataset.bo; rMatch(); });
+  document.querySelectorAll('[data-first]').forEach(e => e.onclick = () => { setup.first = +e.dataset.first; rMatch(); });
+  document.querySelectorAll('[data-k]').forEach(e => e.onchange = () => { setup[e.dataset.k][+e.dataset.i] = e.value; });
+  document.querySelectorAll('[data-cont]').forEach(e => e.onclick = () => { curId = e.dataset.cont; render(); });
+  $('addp').onclick = async () => {
+    const name = $('newp').value.trim();
+    if (!name || players.some(p => p.name.toLowerCase() === name.toLowerCase())) return;
+    await addDoc(collection(db,'players'), {name});
+  };
+  $('start').onclick = async () => {
+    const k = setup.type === 'doubles' ? 2 : 1, a = setup.a.slice(0,k), b = setup.b.slice(0,k), all = [...a, ...b];
+    if (all.some(x => !x)) { setup.err = 'Choose every player.'; return rMatch(); }
+    if (new Set(all).size !== all.length) { setup.err = 'Each player can only appear once.'; return rMatch(); }
+    setup.err = '';
+    const ref = await addDoc(collection(db,'matches'), {type:setup.type, a, b, bestOf:setup.bestOf, firstServer:setup.first, games:[{pts:[]}], status:'live', winner:null, createdAt:Date.now(), createdBy:uid});
+    curId = ref.id; setup.a = ['','']; setup.b = ['',''];
+    render();
+  };
+}
+
+// ---------- live scoring ----------
+function rScore(m){
+  const gi = m.games.length - 1, g = m.games[gi], a = cnt(g,0), b = cnt(g,1), gw = gamesWon(m), done = m.status === 'done', sv = serverSide(m, gi, g.pts.length);
+  $('view').innerHTML =
+    `<div class="card"><div class="row" style="align-items:flex-start">${[0,1].map(s => `<div class="g" style="text-align:center"><div class="n">${!done && sv === s ? '● ' : ''}${esc(sideName(m,s))}</div><div class="m">Games ${gw[s]}</div><div class="score">${s ? b : a}</div></div>`).join('')}</div><div class="m" style="text-align:center;margin-top:6px">Game ${gi+1} · Best of ${m.bestOf} · ● serving</div></div>` +
+    (done ? `<div class="card"><div class="n">🏆 ${esc(sideName(m,m.winner))} won ${gw[m.winner]}–${gw[1-m.winner]}</div><div class="m">${WIN_PTS} leaderboard points to each winner.</div></div>`
+          : `<div class="row" style="margin-bottom:10px">${[0,1].map(s => `<div class="g"><button class="p big" data-pt="${s}">Point<br>${esc(sideName(m,s))}</button></div>`).join('')}</div>`) +
+    `<div class="row"><button class="g" id="undo">Undo last point</button><button class="g" id="close">${done ? 'Close' : 'Leave match'}</button></div>`;
+  document.querySelectorAll('[data-pt]').forEach(e => e.onclick = () => openSheet(+e.dataset.pt));
+  $('undo').onclick = () => undo(m);
+  $('close').onclick = () => { curId = null; render(); };
+}
+const OPT = {
+  how: [['ace','Serve ace'],['winner','Winner'],['error','Opp. error'],['fault','Service fault']],
+  shot: ['Serve','FH loop','BH loop','FH drive','BH drive','Push','Flick','Block','Smash','Chop','Lob'].map(x => [x,x]),
+  rally: [['short','1–3 shots'],['medium','4–8 shots'],['long','9+ shots']]
+};
+const LBL = {how:'How the point ended', shot:'Winning shot', rally:'Rally length'};
+function openSheet(s){ sheetSide = s; tags = {}; drawSheet(); $('sheet').style.display = 'flex'; }
+function drawSheet(){
+  const m = matches.find(x => x.id === curId); if (!m) return;
+  $('sheetin').innerHTML = `<div class="n" style="margin-bottom:8px">Point to ${esc(sideName(m, sheetSide))}</div>` +
+    Object.keys(OPT).map(k => `<div class="m" style="margin:6px 0 4px">${LBL[k]} (optional)</div>` + OPT[k].map(([v,l]) => chip('data-tag', k + '|' + v, l, tags[k] === v)).join('')).join('') +
+    `<div class="row" style="margin-top:10px"><button class="g" id="shc">Cancel</button><button class="p g" id="shs">Save point</button></div>`;
+  document.querySelectorAll('[data-tag]').forEach(e => e.onclick = () => { const [k,v] = e.dataset.tag.split('|'); tags[k] = tags[k] === v ? undefined : v; drawSheet(); });
+  $('shc').onclick = () => { $('sheet').style.display = 'none'; };
+  $('shs').onclick = () => { const t = {...tags}; $('sheet').style.display = 'none'; addPoint(sheetSide, t); };
+}
+async function addPoint(w, t){
+  const m = matches.find(x => x.id === curId); if (!m || m.status !== 'live') return;
+  const games = JSON.parse(JSON.stringify(m.games)), gi = games.length - 1, g = games[gi];
+  const a = cnt(g,0), b = cnt(g,1);
+  const p = {w, s: serverSide(m, gi, g.pts.length)};
+  if (t.how) p.how = t.how; if (t.shot) p.shot = t.shot; if (t.rally) p.rally = t.rally;
+  g.pts.push(p);
+  let status = 'live', winner = null;
+  if (over(a + (w ? 0 : 1), b + (w ? 1 : 0))) {
+    const wins = gamesWon({games}), need = Math.ceil(m.bestOf / 2);
+    if (wins[0] >= need || wins[1] >= need) { status = 'done'; winner = wins[0] > wins[1] ? 0 : 1; }
+    else games.push({pts:[]});
+  }
+  await setDoc(doc(db,'matches',m.id), {games, status, winner}, {merge:true});
+}
+async function undo(m){
+  const games = JSON.parse(JSON.stringify(m.games));
+  let g = games[games.length - 1];
+  if (!g.pts.length && games.length > 1) { games.pop(); g = games[games.length - 1]; }
+  if (!g.pts.length) return;
+  g.pts.pop();
+  await setDoc(doc(db,'matches',m.id), {games, status:'live', winner:null}, {merge:true});
+}
+
+// ---------- stats + leaderboard ----------
+const blank = () => ({played:0, wins:0, pts:0, lost:0, sw:0, sp:0, rw:0, rp:0, ace:0, win:0, err:0, fault:0, shots:{}, rally:{short:[0,0], medium:[0,0], long:[0,0]}});
+function computeStats(){
+  const S = {}, get = id => S[id] || (S[id] = blank());
+  matches.filter(m => m.status === 'done').forEach(m => {
+    [0,1].forEach(sd => (sd ? m.b : m.a).forEach(id => { const s = get(id); s.played++; if (m.winner === sd) s.wins++; }));
+    m.games.forEach(g => g.pts.forEach(p => [0,1].forEach(sd => {
+      const won = p.w === sd, served = p.s === sd;
+      (sd ? m.b : m.a).forEach(id => {
+        const s = get(id);
+        if (won) s.pts++; else s.lost++;
+        if (served) { s.sp++; if (won) s.sw++; } else { s.rp++; if (won) s.rw++; }
+        if (p.rally) s.rally[p.rally][won ? 0 : 1]++;
+        if (won) { if (p.how === 'ace') s.ace++; if (p.how === 'winner') s.win++; if (p.shot) s.shots[p.shot] = (s.shots[p.shot] || 0) + 1; }
+        else { if (p.how === 'error') s.err++; if (p.how === 'fault') s.fault++; }
+      });
+    })));
+  });
+  return S;
+}
+function rBoard(){
+  const S = computeStats();
+  const rows = players.map(p => ({p, s: S[p.id] || blank()})).sort((x,y) => y.s.wins - x.s.wins || ((y.s.wins / (y.s.played || 1)) - (x.s.wins / (x.s.played || 1))) || x.p.name.localeCompare(y.p.name));
+  $('view').innerHTML = rows.length ? rows.map(({p,s}, i) => {
+    const r = s.rally, top = Object.entries(s.shots).sort((a,b) => b[1] - a[1]).slice(0,3).map(([k,v]) => `${esc(k)} ×${v}`).join(', ') || '–';
+    return `<div class="card" data-ex="${p.id}" style="cursor:pointer"><div class="row"><div class="n" style="width:22px;color:var(--tx2)">${i+1}</div><div class="g"><div class="n">${esc(p.name)}</div><div class="m">${s.played} played · ${s.wins} won · ${pct(s.wins, s.played)}</div></div><div class="n">${s.wins * WIN_PTS} pts</div></div>` +
+      (expanded === p.id ? `<div class="st"><div><b>${pct(s.pts, s.pts + s.lost)}</b>Points won</div><div><b>${pct(s.sw, s.sp)}</b>Won on own serve</div><div><b>${pct(s.rw, s.rp)}</b>Won on return</div><div><b>${s.ace}</b>Serve aces</div><div><b>${s.win}</b>Winners</div><div><b>${s.err}</b>Own errors</div><div><b>${s.fault}</b>Service faults</div><div><b>${pct(r.short[0], r.short[0] + r.short[1])}</b>Short rallies won</div><div><b>${pct(r.medium[0], r.medium[0] + r.medium[1])}</b>Medium rallies won</div><div><b>${pct(r.long[0], r.long[0] + r.long[1])}</b>Long rallies won</div></div><div class="m" style="margin-top:8px">Top winning shots: ${top}</div><div class="m">Doubles stats are shared by the pair.</div>` : '') + `</div>`;
+  }).join('') : '<p class="sub">No players yet. Add players on the Match tab.</p>';
+  document.querySelectorAll('[data-ex]').forEach(e => e.onclick = () => { expanded = expanded === e.dataset.ex ? null : e.dataset.ex; rBoard(); });
+}
+function rHist(){
+  const done = matches.filter(m => m.status === 'done').sort((a,b) => b.createdAt - a.createdAt);
+  $('view').innerHTML = done.length ? done.map(m => {
+    const gw = gamesWon(m), sc = m.games.filter(g => g.pts.length).map(g => cnt(g,0) + '-' + cnt(g,1)).join(', ');
+    return `<div class="card"><div class="row"><div class="g"><div class="n">${esc(sideName(m, m.winner))} won</div><div class="m">${esc(sideName(m,0))} ${gw[0]}–${gw[1]} ${esc(sideName(m,1))}</div><div class="m">${sc} · ${new Date(m.createdAt).toLocaleDateString()}</div></div><button data-del="${m.id}" style="font-size:12px">Delete</button></div></div>`;
+  }).join('') : '<p class="sub">No finished matches yet.</p>';
+  document.querySelectorAll('[data-del]').forEach(e => e.onclick = async () => { if (confirm('Delete this match? Its leaderboard points will be removed.')) await deleteDoc(doc(db,'matches',e.dataset.del)); });
+}
+}
+if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+</script>
+</body></html>
